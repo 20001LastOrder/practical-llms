@@ -1,12 +1,27 @@
 from __future__ import annotations
 
+import json
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Optional, Tuple
 
+from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
 
 from sherpa_ai.actions.base import BaseAction
 from sherpa_ai.agents.base import BaseAgent
+from sherpa_ai.agents.user import UserAgent
+from sherpa_ai.events import Event, EventType
+from sherpa_ai.policies.base import PolicyOutput
+
+ACTION_OUTPUT_PROMPT = """
+Based on the above context, find the input to the following action:
+{action}
+
+Output the input in JSON format as described below without any extra text.
+Response Format:
+{{"args": {{"arg name": "value"}}}}
+Follow the described format strictly.
+"""
 
 
 class FlowConnection(BaseModel):
@@ -21,30 +36,48 @@ class FlowNode(BaseModel, ABC):
     outgoing_connections: list[FlowConnection] = []
 
     @abstractmethod
-    def execute(self, **kwargs):
+    def execute(self, **kwargs) -> Tuple[Optional[PolicyOutput], Optional[FlowNode]]:
         pass
 
 
 class StartNode(FlowNode):
+    outgoing_connections: list[FlowConnection] = Field(default=[], max_length=1)
     name: str = "Start"
 
-    def execute(self, **kwargs):
-        pass
+    def execute(self, **kwargs) -> Tuple[None, FlowNode]:
+        logger.info("Starting the flow")
+        return None, self.outgoing_connections[0].target
 
 
 class EndNode(FlowNode):
     name: str = "End"
 
-    def execute(self, **kwargs):
-        pass
+    def execute(self, **kwargs) -> Tuple[None, None]:
+        logger.info("Ending the flow")
+        return None, None
 
 
 class DecisionNode(FlowNode):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     decision_maker: BaseAgent
 
-    def execute(self, **kwargs):
-        pass
+    def execute(self, context: str, **kwargs) -> Tuple[None, Optional[FlowNode]]:
+        logger.info(f"Executing decision node: {self.name}")
+        if not isinstance(self.decision_maker, UserAgent):
+            raise NotImplementedError("Only UserAgent is supported for deision making")
+
+        conditions = [
+            f"{i}.{connection.target.name}"
+            for i, connection in enumerate(self.outgoing_connections)
+        ]
+        condition_str = "\n".join(conditions)
+        task = f"Based on the current context and conditions, select the best path to take. Select an integer (0-{len(conditions) - 1})\n{condition_str}"
+
+        self.decision_maker.shared_memory.add(EventType.task, self.name, task)
+        self.decision_maker.run()
+        selection = self.decision_maker.shared_memory.events[-1].content
+        selection = int(selection)
+        return None, self.outgoing_connections[selection].target
 
 
 class LoopNode(DecisionNode):
@@ -54,6 +87,24 @@ class LoopNode(DecisionNode):
 class ActionNode(FlowNode):
     outgoing_connections: list[FlowConnection] = Field(default=[], max_length=1)
     action: BaseAction
+    prompt: str = ACTION_OUTPUT_PROMPT
 
-    def execute(self, **kwargs):
-        pass
+    def execute(self, context: str, llm, **kwargs) -> PolicyOutput:
+        logger.info(f"Executing action node: {self.name}")
+        prompt = self.prompt.format(action=self.action)
+        prompt = context + "\n\n" + prompt
+
+        result = llm.predict(prompt)
+        action_output = self.transform_output(result)
+
+        return (
+            PolicyOutput(action=self.action, args=action_output),
+            self.outgoing_connections[0].target,
+        )
+
+    def transform_output(self, output_str: str) -> Tuple[str, dict]:
+        try:
+            return json.loads(output_str)
+        except json.decoder.JSONDecodeError:
+            logger.error("Output is not a proper json format {}", output_str)
+            return {}

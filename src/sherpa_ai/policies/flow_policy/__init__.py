@@ -1,21 +1,20 @@
+from typing import Optional
+
+from loguru import logger
+
 from sherpa_ai.actions.base import BaseAction
 from sherpa_ai.agents.base import BaseAgent
 from sherpa_ai.memory import Belief
-from sherpa_ai.policies.base import BasePolicy
-from sherpa_ai.policies.flow_policy.flow import (
-    ActionNode,
-    DecisionNode,
-    EndNode,
-    FlowConnection,
-    FlowNode,
-    LoopNode,
-    StartNode,
-)
+from sherpa_ai.policies.base import BasePolicy, PolicyOutput
+from sherpa_ai.policies.flow_policy.flow import (ActionNode, DecisionNode,
+                                                 EndNode, FlowConnection,
+                                                 FlowNode, LoopNode, StartNode)
 
 
 class FlowPolicy(BasePolicy):
     flow_nodes: dict[str, FlowNode] = {}
     flow_connections: list[FlowConnection] = []
+    _current_node: Optional[FlowNode] = None
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -24,9 +23,20 @@ class FlowPolicy(BasePolicy):
 
         self.flow_nodes[start_node.name] = start_node
         self.flow_nodes[end_node.name] = end_node
+        self._current_node = start_node
 
-    def select_action(self, belief: Belief, **kwargs):
-        return self.flow.execute(**kwargs)
+    def select_action(self, belief: Belief, llm, **kwargs) -> Optional[PolicyOutput]:
+        policy_output, next_node = self._current_node.execute(
+            context="", llm=llm, **kwargs
+        )
+
+        while policy_output is None and next_node is not None:
+            policy_output, next_node = next_node.execute(
+                context="", llm=llm, **kwargs
+            )
+
+        self._current_node = next_node
+        return policy_output
 
     def add_action_node(self, name: str, action: BaseAction):
         self.check_node_does_not_exist(name)

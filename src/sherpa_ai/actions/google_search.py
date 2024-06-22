@@ -6,7 +6,6 @@ from sherpa_ai.actions.base import BaseRetrievalAction
 from sherpa_ai.config.task_config import AgentConfig
 from sherpa_ai.tools import SearchTool
 
-
 # TODO check for prompt that keep orginal snetnences
 SEARCH_SUMMARY_DESCRIPTION = """Role Description: {role_description}
 Task: {task}
@@ -32,10 +31,6 @@ Only use the information given. Do not add any additional information. The summa
 
 
 class GoogleSearch(BaseRetrievalAction):
-    role_description: str
-    task: str
-    llm: Any  # The BaseLanguageModel from LangChain is not compatible with Pydantic 2 yet
-    description: str = SEARCH_SUMMARY_DESCRIPTION
     config: AgentConfig = AgentConfig()
     _search_tool: Any
 
