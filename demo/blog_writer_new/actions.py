@@ -8,6 +8,7 @@ import tiktoken
 from langchain.chat_models import ChatOpenAI
 from langchain.document_loaders import PDFMinerLoader
 from langchain.embeddings.base import Embeddings
+from langchain.prompts import PromptTemplate
 from langchain.prompts.chat import (ChatPromptTemplate,
                                     HumanMessagePromptTemplate,
                                     SystemMessagePromptTemplate)
@@ -19,6 +20,8 @@ from pydantic import ConfigDict
 
 from sherpa_ai.actions import GoogleSearch
 from sherpa_ai.actions.base import BaseAction
+from sherpa_ai.events import Event, EventType
+from sherpa_ai.memory import Belief
 
 
 def get_file_path_input(instruction):
@@ -28,6 +31,33 @@ def get_file_path_input(instruction):
             return file_path
         else:
             print("File path does not exist. Please try again.")
+
+
+def process_outlines(outlines):
+    outline_titles = []
+    outline_insights = []
+    for section in outlines:
+        for outline in outlines[section]:
+            outline_titles.append(f"{section}.{outline}")
+            outline_insights.append(outlines[section][outline])
+
+    return {
+        "outlines": outline,
+        "outline_titles": outline_titles,
+        "outline_insights": outline_insights,
+    }
+
+
+class GoogleSearchNew(BaseAction):
+    name: str = "google_search"
+    args: dict = []
+    usage: str = "google_search"
+    search: GoogleSearch = GoogleSearch()
+
+    def execute(self, dict_state: dict, **kwargs):
+        search_query = input("Enter the search query: ")
+        search_results = self.search.execute(search_query)
+        return search_results
 
 
 class ChunkDocument(BaseAction):
@@ -114,7 +144,7 @@ class GenerateOutline(BaseAction):
         model="gpt-4o",
     )
 
-    def execute(self, data):
+    def execute(self, data, **kwargs):
         statements = data["generate_insight"]
         # Split the text into lines
         lines = statements.split("\n")
@@ -140,12 +170,12 @@ class GenerateOutline(BaseAction):
             # Increment the line number counter
             line_number += 1
 
-            # Flatten the dictionary into a single string with the desired format
-            processed_lines = [
-                f"- [{line_number}] {statement}"
-                for line_number, statement in processed_dict.items()
-            ]
-            processed_statements = "\n".join(processed_lines)
+        # Flatten the dictionary into a single string with the desired format
+        processed_lines = [
+            f"- [{line_number}] {statement}"
+            for line_number, statement in processed_dict.items()
+        ]
+        processed_statements = "\n".join(processed_lines)
 
         system_template = """You are an experienced technical writer who is good at storytelling for technical topics."""
         system_prompt = SystemMessagePromptTemplate.from_template(system_template)
@@ -194,7 +224,10 @@ class GenerateOutline(BaseAction):
         if self.verbose:
             print(f"\nEssay outline: {outline.content}\n")
             print(f"\nEssay outline (text): {outline_json}\n")
-        return outline_json
+
+        outline_results = process_outlines(outline_json)
+
+        return outline_results
 
 
 class NextOutline(BaseAction):
@@ -202,8 +235,19 @@ class NextOutline(BaseAction):
     args: dict = []
     usage: str = "next_outline"
 
-    def execute(self, **kwargs):
-        pass
+    def execute(self, data: dict, **kwargs):
+        if "generate_outline" in data:
+            outline = data["generate_outline"]
+        else:
+            outline = data["read_outlines"]
+
+        outline_num = data.get("next_outline", 0)
+        if outline_num < len(outline):
+            outline_num += 1
+        else:
+            logger.info("Reached the end of the outline, please write the file.")
+
+        return outline_num
 
 
 class ReadOutlines(BaseAction):
@@ -211,17 +255,65 @@ class ReadOutlines(BaseAction):
     args: dict = []
     usage: str = "read_outlines"
 
-    def execute(self, **kwargs):
-        pass
+    def execute(self, data, **kwargs):
+        outline_file = get_file_path_input("Enter the path to the outline file: ")
+        with open(outline_file, encoding="utf-8") as f:
+            outline = json.load(f)
+
+        outline = process_outlines(outline)
+        return outline
 
 
 class Write(BaseAction):
     name: str = "write"
     args: dict = []
     usage: str = "write"
+    prompt: str = (
+        "Please write a paragraph based for the outline provided based on the context. Output the result as markdown text. Do not output anything else\n\n Context:\n {context}\n\n Outline title:\n {outline_title}\n\n Outline arguments:\n {outline}\n\n Write your paragraph:"
+    )
+    llm: Any = ChatOpenAI(
+        temperature=0,
+        model="gpt-3.5-turbo",
+    )
 
-    def execute(self, **kwargs):
-        pass
+    def execute(self, data: dict, belief: Belief, **kwargs):
+        if "google_search" in data:
+            google_search_results = data["google_search"]
+            belief.update(
+                Event(EventType.feedback, "google_search", google_search_results)
+            )
+
+        if "generate_outline" in data:
+            outline_data = data["generate_outline"]
+        else:
+            outline_data = data["read_outlines"]
+
+        if "write" in data:
+            write_result = data["write"]
+        else:
+            write_result = {}
+            for outline_title in outline_data["outline_titles"]:
+                write_result[outline_title] = ""
+
+        outline_num = data.get("next_outline", 0)
+        outline_title = outline_data["outline_titles"][outline_num]
+
+        logger.info(f"Writing for outline: {outline_title}")
+        context = belief.get_context(self.llm.get_num_tokens)
+        outline_title = outline_data["outline_titles"][outline_num]
+        outline_args = outline_data["outline_insights"][outline_num]
+        prompt = PromptTemplate.from_template(self.prompt)
+        
+        prompt = prompt.format(
+            context=context, outline_title=outline_title, outline=outline_args
+        )
+
+        result = self.llm.predict(prompt)
+
+        write_result[outline_title] = result
+        logger.info(f"Result: {result}")
+
+        return write_result
 
 
 class WriteFile(BaseAction):
@@ -230,7 +322,23 @@ class WriteFile(BaseAction):
     usage: str = "write_file"
 
     def execute(self, **kwargs):
-        pass
+        write_results = kwargs["write"]
+        outline_data = kwargs["generate_outline"]
+
+        output_file = input("Output path: ")
+
+        results = ""
+
+        for section in outline_data["outlines"]:
+            results += f"## {section}\n"
+            for outline in outline_data["outlines"][section]:
+                results += f"### {outline}\n"
+                results += write_results[f"{section}.{outline}"] + "\n"
+
+        with open(output_file, "w", encoding="utf-8") as f:
+            f.write(results)
+
+        return output_file
 
 
 def get_action_map():
@@ -238,7 +346,7 @@ def get_action_map():
         "chunk_document": ChunkDocument(),
         "generate_insight": GenerateInsight(),
         "generate_outline": GenerateOutline(),
-        "google_search": GoogleSearch(),
+        "google_search": GoogleSearchNew(name="google_search"),
         "next_outline": NextOutline(),
         "read_outlines": ReadOutlines(),
         "write": Write(),

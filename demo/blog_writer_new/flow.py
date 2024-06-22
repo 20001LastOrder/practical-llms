@@ -54,10 +54,10 @@ agent = UserAgent(name="user", description="User agent", shared_memory=shared_me
 policy = get_flow_policy(get_action_map(), agent)
 belief = Belief()
 llm = ChatOpenAI()
+
 while True:
     policy_output = policy.select_action(belief, llm=llm)
-    output = policy_output.action.execute(shared_memory.data)
+    output = policy_output.action.execute(shared_memory.data, belief=belief)
     shared_memory.data[policy_output.action.name] = output
     if policy_output is None:
         break
-
