@@ -42,7 +42,7 @@ def process_outlines(outlines):
             outline_insights.append(outlines[section][outline])
 
     return {
-        "outlines": outline,
+        "outlines": outlines,
         "outline_titles": outline_titles,
         "outline_insights": outline_insights,
     }
@@ -303,7 +303,7 @@ class Write(BaseAction):
         outline_title = outline_data["outline_titles"][outline_num]
         outline_args = outline_data["outline_insights"][outline_num]
         prompt = PromptTemplate.from_template(self.prompt)
-        
+
         prompt = prompt.format(
             context=context, outline_title=outline_title, outline=outline_args
         )
@@ -321,14 +321,15 @@ class WriteFile(BaseAction):
     args: dict = []
     usage: str = "write_file"
 
-    def execute(self, **kwargs):
-        write_results = kwargs["write"]
-        outline_data = kwargs["generate_outline"]
-
+    def execute(self, data, **kwargs):
+        write_results = data["write"]
+        if "generate_outline" in data:
+            outline_data = data["generate_outline"]
+        else:
+            outline_data = data["read_outlines"]
         output_file = input("Output path: ")
 
         results = ""
-
         for section in outline_data["outlines"]:
             results += f"## {section}\n"
             for outline in outline_data["outlines"][section]:

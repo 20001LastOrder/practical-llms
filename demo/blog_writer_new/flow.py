@@ -55,6 +55,8 @@ policy = get_flow_policy(get_action_map(), agent)
 belief = Belief()
 llm = ChatOpenAI()
 
+print(policy.visualize())
+
 while True:
     policy_output = policy.select_action(belief, llm=llm)
     output = policy_output.action.execute(shared_memory.data, belief=belief)
