@@ -5,12 +5,14 @@ from langchain.chat_models import ChatOpenAI
 from share_memory import DictSharedMemory
 
 from sherpa_ai.agents.base import BaseAgent
+from sherpa_ai.agents.qa_agent import QAAgent
 from sherpa_ai.agents.user import UserAgent
 from sherpa_ai.memory import Belief, SharedMemory
 from sherpa_ai.policies.flow_policy import FlowPolicy
+from sherpa_ai.policies.react_policy import ReactPolicy
 
 
-def get_flow_policy(action_map, agent) -> FlowPolicy:
+def get_flow_policy(action_map, agent, auto_agent) -> FlowPolicy:
     policy = FlowPolicy()
 
     policy.add_decision_node("start_session", agent)
@@ -18,8 +20,9 @@ def get_flow_policy(action_map, agent) -> FlowPolicy:
     policy.add_action_node("read_outlines", action_map["read_outlines"])
     policy.add_action_node("generate_insight", action_map["generate_insight"])
     policy.add_action_node("generate_outline", action_map["generate_outline"])
+    policy.add_action_node("human_feedback", action_map["human_feedback"])
     policy.add_decision_node("iterate_outlines", agent)
-    policy.add_decision_node("choose_action", agent)
+    policy.add_decision_node("choose_action", auto_agent)
     policy.add_action_node("google_search", action_map["google_search"])
     policy.add_action_node("write", action_map["write"])
     policy.add_action_node("next_outline", action_map["next_outline"])
@@ -34,7 +37,9 @@ def get_flow_policy(action_map, agent) -> FlowPolicy:
     policy.add_connection("generate_outline", "iterate_outlines")
     policy.add_connection("read_outlines", "iterate_outlines")
 
-    policy.add_connection("iterate_outlines", "choose_action")
+    policy.add_connection("iterate_outlines", "human_feedback")
+
+    policy.add_connection("human_feedback", "choose_action")
     policy.add_connection("choose_action", "google_search")
     policy.add_connection("choose_action", "write")
     policy.add_connection("choose_action", "next_outline")
@@ -50,16 +55,28 @@ def get_flow_policy(action_map, agent) -> FlowPolicy:
 
 
 shared_memory = DictSharedMemory(objective="")
-agent = UserAgent(name="user", description="User agent", shared_memory=shared_memory)
-policy = get_flow_policy(get_action_map(), agent)
-belief = Belief()
+user_agent = UserAgent(
+    name="user", description="User agent", shared_memory=shared_memory
+)
 llm = ChatOpenAI()
+
+auto_agent = QAAgent(
+    llm=llm,
+    name="Writer",
+    shared_memory=shared_memory,
+    belief=Belief(),
+    policy=None,
+    num_runs=1,
+)
+
+policy = get_flow_policy(get_action_map(), user_agent, auto_agent)
+belief = Belief()
 
 print(policy.visualize())
 
 while True:
-    policy_output = policy.select_action(belief, llm=llm)
-    output = policy_output.action.execute(shared_memory.data, belief=belief)
-    shared_memory.data[policy_output.action.name] = output
+    policy_output = policy.select_action(belief, llm=llm, shared_memory=shared_memory)
     if policy_output is None:
         break
+    output = policy_output.action.execute(shared_memory.data, belief=belief)
+    shared_memory.data[policy_output.action.name] = output

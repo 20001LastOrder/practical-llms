@@ -25,14 +25,16 @@ class FlowPolicy(BasePolicy):
         self.flow_nodes[end_node.name] = end_node
         self._current_node = start_node
 
-    def select_action(self, belief: Belief, llm, **kwargs) -> Optional[PolicyOutput]:
+    def select_action(
+        self, belief: Belief, llm, shared_memory, **kwargs
+    ) -> Optional[PolicyOutput]:
         policy_output, next_node = self._current_node.execute(
-            context="", llm=llm, **kwargs
+            context="", llm=llm, state=shared_memory.data, **kwargs
         )
 
         while policy_output is None and next_node is not None:
             policy_output, next_node = next_node.execute(
-                context="", llm=llm, **kwargs
+                context="", llm=llm, state=shared_memory.data, **kwargs
             )
 
         self._current_node = next_node

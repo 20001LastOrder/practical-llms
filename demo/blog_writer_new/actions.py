@@ -50,13 +50,12 @@ def process_outlines(outlines):
 
 class GoogleSearchNew(BaseAction):
     name: str = "google_search"
-    args: dict = []
-    usage: str = "google_search"
+    args: dict = {"query": "string"}
+    usage: str = "Get answers from Google Search"
     search: GoogleSearch = GoogleSearch()
 
     def execute(self, dict_state: dict, **kwargs):
-        search_query = input("Enter the search query: ")
-        search_results = self.search.execute(search_query)
+        search_results = self.search.execute(**dict_state["action_args"])
         return search_results
 
 
@@ -232,8 +231,8 @@ class GenerateOutline(BaseAction):
 
 class NextOutline(BaseAction):
     name: str = "next_outline"
-    args: dict = []
-    usage: str = "next_outline"
+    args: dict = {}
+    usage: str = "Move to the next outline"
 
     def execute(self, data: dict, **kwargs):
         if "generate_outline" in data:
@@ -264,10 +263,24 @@ class ReadOutlines(BaseAction):
         return outline
 
 
+class HumanFeedback(BaseAction):
+    name: str = "human_feedback"
+    args: dict = []
+    usage: str = "human_feedback"
+    chat: Any = ChatOpenAI(
+        temperature=0,
+        model="gpt-3.5-turbo",
+    )
+
+    def execute(self, data, **kwargs):
+        feedback = input("Please provide input on the next steps: ")
+        return feedback
+
+
 class Write(BaseAction):
     name: str = "write"
-    args: dict = []
-    usage: str = "write"
+    args: dict = {}
+    usage: str = "Write a draft outline based on the current information"
     prompt: str = (
         "Please write a paragraph based for the outline provided based on the context. Output the result as markdown text. Do not output anything else\n\n Context:\n {context}\n\n Outline title:\n {outline_title}\n\n Outline arguments:\n {outline}\n\n Write your paragraph:"
     )
@@ -280,7 +293,7 @@ class Write(BaseAction):
         if "google_search" in data:
             google_search_results = data["google_search"]
             belief.update(
-                Event(EventType.feedback, "google_search", google_search_results)
+                Event(EventType.user_input, "google_search", google_search_results)
             )
 
         if "generate_outline" in data:
@@ -308,6 +321,8 @@ class Write(BaseAction):
             context=context, outline_title=outline_title, outline=outline_args
         )
 
+        logger.info(f"Prompt: {prompt}")
+
         result = self.llm.predict(prompt)
 
         write_result[outline_title] = result
@@ -318,7 +333,7 @@ class Write(BaseAction):
 
 class WriteFile(BaseAction):
     name: str = "write_file"
-    args: dict = []
+    args: dict = {}
     usage: str = "write_file"
 
     def execute(self, data, **kwargs):
@@ -352,4 +367,5 @@ def get_action_map():
         "read_outlines": ReadOutlines(),
         "write": Write(),
         "write_file": WriteFile(),
+        "human_feedback": HumanFeedback(),
     }

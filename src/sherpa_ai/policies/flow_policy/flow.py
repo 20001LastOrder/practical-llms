@@ -11,6 +11,7 @@ from sherpa_ai.actions.base import BaseAction
 from sherpa_ai.agents.base import BaseAgent
 from sherpa_ai.agents.user import UserAgent
 from sherpa_ai.events import Event, EventType
+from sherpa_ai.memory.belief import Belief
 from sherpa_ai.policies.base import PolicyOutput
 
 ACTION_OUTPUT_PROMPT = """
@@ -61,23 +62,40 @@ class DecisionNode(FlowNode):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     decision_maker: BaseAgent
 
-    def execute(self, context: str, **kwargs) -> Tuple[None, Optional[FlowNode]]:
+    def execute(
+        self, context: str, state: dict, **kwargs
+    ) -> Tuple[None, Optional[FlowNode]]:
         logger.info(f"Executing decision node: {self.name}")
-        if not isinstance(self.decision_maker, UserAgent):
-            raise NotImplementedError("Only UserAgent is supported for deision making")
+        if isinstance(self.decision_maker, UserAgent):
+            conditions = [
+                f"{i}.{connection.target.name}"
+                for i, connection in enumerate(self.outgoing_connections)
+            ]
+            condition_str = "\n".join(conditions)
+            task = f"Based on the current context and conditions, select the best path to take. Select an integer (0-{len(conditions) - 1})\n{condition_str}"
 
-        conditions = [
-            f"{i}.{connection.target.name}"
-            for i, connection in enumerate(self.outgoing_connections)
-        ]
-        condition_str = "\n".join(conditions)
-        task = f"Based on the current context and conditions, select the best path to take. Select an integer (0-{len(conditions) - 1})\n{condition_str}"
+            self.decision_maker.shared_memory.add(EventType.task, self.name, task)
+            self.decision_maker.run()
+            selection = self.decision_maker.shared_memory.events[-1].content
+            selection = int(selection)
+            return None, self.outgoing_connections[selection].target
+        else:
+            context = state["human_feedback"]
+            actions = [
+                connection.target.action for connection in self.outgoing_connections
+            ]
+            belief = self.decision_maker.belief
+            belief.set_actions(actions)
+            belief.set_current_task(Event(EventType.task, "human", context))
+            output = self.decision_maker.policy.select_action(belief)
+            logger.info(f"Action selected: {output.action}, {output.args}")
+            action_id = actions.index(output.action)
+            state["action_args"] = output.args
 
-        self.decision_maker.shared_memory.add(EventType.task, self.name, task)
-        self.decision_maker.run()
-        selection = self.decision_maker.shared_memory.events[-1].content
-        selection = int(selection)
-        return None, self.outgoing_connections[selection].target
+            return (
+                None,
+                self.outgoing_connections[action_id].target,
+            )
 
 
 class LoopNode(DecisionNode):
