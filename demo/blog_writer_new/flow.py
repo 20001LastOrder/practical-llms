@@ -15,14 +15,14 @@ from sherpa_ai.policies.react_policy import ReactPolicy
 def get_flow_policy(action_map, agent, auto_agent) -> FlowPolicy:
     policy = FlowPolicy()
 
-    policy.add_decision_node("start_session", agent)
+    policy.add_decision_node("start_session", auto_agent, "session start")
     policy.add_action_node("chunk_document", action_map["chunk_document"])
     policy.add_action_node("read_outlines", action_map["read_outlines"])
     policy.add_action_node("generate_insight", action_map["generate_insight"])
     policy.add_action_node("generate_outline", action_map["generate_outline"])
-    policy.add_action_node("human_feedback", action_map["human_feedback"])
-    policy.add_decision_node("iterate_outlines", agent)
-    policy.add_decision_node("choose_action", auto_agent)
+    # policy.add_action_node("human_feedback", action_map["human_feedback"])
+    policy.add_decision_node("iterate_outlines", auto_agent, "continue iterate over the outlines")
+    policy.add_decision_node("continue_writing", auto_agent, "continue writing the outline")
     policy.add_action_node("google_search", action_map["google_search"])
     policy.add_action_node("write", action_map["write"])
     policy.add_action_node("next_outline", action_map["next_outline"])
@@ -37,15 +37,17 @@ def get_flow_policy(action_map, agent, auto_agent) -> FlowPolicy:
     policy.add_connection("generate_outline", "iterate_outlines")
     policy.add_connection("read_outlines", "iterate_outlines")
 
-    policy.add_connection("iterate_outlines", "human_feedback")
+    # policy.add_connection("iterate_outlines", "human_feedback")
 
-    policy.add_connection("human_feedback", "choose_action")
-    policy.add_connection("choose_action", "google_search")
-    policy.add_connection("choose_action", "write")
-    policy.add_connection("choose_action", "next_outline")
+    # policy.add_connection("human_feedback", "continue_writing")
+    policy.add_connection("iterate_outlines", "continue_writing")
+    policy.add_connection("continue_writing", "google_search")
+    policy.add_connection("continue_writing", "write")
+    policy.add_connection("continue_writing", "next_outline")
     policy.add_connection("next_outline", "iterate_outlines")
+    policy.add_connection("google_search", "write")
+
     policy.add_connection("write", "iterate_outlines")
-    policy.add_connection("google_search", "iterate_outlines")
 
     policy.add_connection("iterate_outlines", "write_file")
     policy.add_connection("write_file", "start_session")

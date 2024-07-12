@@ -48,9 +48,11 @@ class FlowPolicy(BasePolicy):
         self.check_node_does_not_exist(name)
         self.flow_nodes[name] = LoopNode(name=name, decision_maker=decision_maker)
 
-    def add_decision_node(self, name: str, decision_maker: BaseAgent):
+    def add_decision_node(self, name: str, decision_maker: BaseAgent, description: str):
         self.check_node_does_not_exist(name)
-        self.flow_nodes[name] = DecisionNode(name=name, decision_maker=decision_maker)
+        self.flow_nodes[name] = DecisionNode(
+            name=name, decision_maker=decision_maker, description=description
+        )
 
     def check_node_does_not_exist(self, name: str):
         if name in self.flow_nodes:

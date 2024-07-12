@@ -1,9 +1,0 @@
-{"AI Systems Development": {"Simplification and Core Problem Solving": ["AF: The thought process for many involves starting with complex systems but realizing the need for simpler solutions that solve the core problem.", "SP: Simplifying tool definitions can allow for more tools to be integrated into a model efficiently."
-        ], "Multi-Agent Systems": ["CD: Practical experience led to moving away from a multi-agent approach in agent development.", "CD: Developing agents for sales enablement at Tribble involves building multi-agent systems.", "AF: Multi-agent systems involve multiple instances of agent loops with different behaviors interacting with each other."
-        ], "Robustness and Effectiveness": ["AF: Robustness is crucial for AI systems to effectively enhance business workflows.", "SP: Having multiple agents working together can create a team without the need to hire additional staff.", "SP: The context window determines how much context a single agent can use to perform tasks effectively."
-        ]
-    }, "Content Development and Automation": {"Interactive Components and Automation": ["CD: GPT-4 was able to code interactive components with minimal examples, showcasing its impressive capabilities.", "CD: The react pattern helped automate the process of loading articles onto the site."
-        ], "Content Management": ["CD: Using a GitHub repository as a database for content synced into redis for live serving.", "CD: Challenges faced in independent publishing in Canada due to audience shifts from Facebook.", "CD: Using different agents with smaller toolkits can lead to more focused and cost-effective outcomes."
-        ]
-    }
-}

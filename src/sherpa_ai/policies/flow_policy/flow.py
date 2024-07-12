@@ -8,6 +8,7 @@ from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
 
 from sherpa_ai.actions.base import BaseAction
+from sherpa_ai.actions.empty import EmptyAction
 from sherpa_ai.agents.base import BaseAgent
 from sherpa_ai.agents.user import UserAgent
 from sherpa_ai.events import Event, EventType
@@ -22,6 +23,14 @@ Output the input in JSON format as described below without any extra text.
 Response Format:
 {{"args": {{"arg name": "value"}}}}
 Follow the described format strictly.
+"""
+
+feedback_prompt = """
+You are an intelligent assistant helping the user to complete their task. You have the following task to complete:
+
+{options}
+
+Use polite and engaging language, and ask the user what they want you to help them next.  Not need to greet and keep it short and concise. 
 """
 
 
@@ -52,6 +61,7 @@ class StartNode(FlowNode):
 
 class EndNode(FlowNode):
     name: str = "End"
+    action: EmptyAction = EmptyAction(name="End", args={}, usage="End the flow")
 
     def execute(self, **kwargs) -> Tuple[None, None]:
         logger.info("Ending the flow")
@@ -61,41 +71,61 @@ class EndNode(FlowNode):
 class DecisionNode(FlowNode):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     decision_maker: BaseAgent
+    description: str
+    action: EmptyAction = None
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.action = EmptyAction(name=self.name, args={}, usage=self.description)
+
+    def ask_for_feedback(self, options: str) -> str:
+        prompt = feedback_prompt.format(options=options)
+
+        question = self.decision_maker.llm.predict(prompt)
+
+        feedback = input(question)
+
+        return feedback
 
     def execute(
         self, context: str, state: dict, **kwargs
     ) -> Tuple[None, Optional[FlowNode]]:
-        logger.info(f"Executing decision node: {self.name}")
-        if isinstance(self.decision_maker, UserAgent):
-            conditions = [
-                f"{i}.{connection.target.name}"
-                for i, connection in enumerate(self.outgoing_connections)
-            ]
-            condition_str = "\n".join(conditions)
-            task = f"Based on the current context and conditions, select the best path to take. Select an integer (0-{len(conditions) - 1})\n{condition_str}"
+        # logger.info(f"Executing decision node: {self.name}")
+        # if isinstance(self.decision_maker, UserAgent):
+        #     conditions = [
+        #         f"{i}.{connection.target.name}"
+        #         for i, connection in enumerate(self.outgoing_connections)
+        #     ]
+        #     condition_str = "\n".join(conditions)
+        #     task = f"Based on the current context and conditions, select the best path to take. Select an integer (0-{len(conditions) - 1})\n{condition_str}"
 
-            self.decision_maker.shared_memory.add(EventType.task, self.name, task)
-            self.decision_maker.run()
-            selection = self.decision_maker.shared_memory.events[-1].content
-            selection = int(selection)
-            return None, self.outgoing_connections[selection].target
-        else:
-            context = state["human_feedback"]
-            actions = [
-                connection.target.action for connection in self.outgoing_connections
-            ]
-            belief = self.decision_maker.belief
-            belief.set_actions(actions)
-            belief.set_current_task(Event(EventType.task, "human", context))
-            output = self.decision_maker.policy.select_action(belief)
-            logger.info(f"Action selected: {output.action}, {output.args}")
-            action_id = actions.index(output.action)
-            state["action_args"] = output.args
+        #     self.decision_maker.shared_memory.add(EventType.task, self.name, task)
+        #     self.decision_maker.run()
+        #     selection = self.decision_maker.shared_memory.events[-1].content
+        #     selection = int(selection)
+        #     return None, self.outgoing_connections[selection].target
+        # else:
 
-            return (
-                None,
-                self.outgoing_connections[action_id].target,
-            )
+        actions = [
+            connection.target.action for connection in self.outgoing_connections
+        ]
+
+        options = "\n".join([f"{i}. {action}" for i, action in enumerate(actions)])
+
+        context = self.ask_for_feedback(options)
+
+        belief = self.decision_maker.belief
+        belief.set_actions(actions)
+        belief.set_current_task(Event(EventType.task, "human", context))
+        output = self.decision_maker.policy.select_action(belief)
+        logger.info(f"Action selected: {output.action}, {output.args}")
+        action_id = actions.index(output.action)
+        state["action_args"] = output.args
+
+        return (
+            None,
+            self.outgoing_connections[action_id].target,
+        )
 
 
 class LoopNode(DecisionNode):

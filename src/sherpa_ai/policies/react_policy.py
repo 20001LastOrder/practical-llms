@@ -7,7 +7,6 @@ from loguru import logger
 
 from sherpa_ai.policies.base import BasePolicy, PolicyOutput
 
-
 if TYPE_CHECKING:
     from sherpa_ai.memory.belief import Belief
 
@@ -29,6 +28,8 @@ SELECTION_DESCRIPTION = """{role_description}
 You should only respond in JSON format as described below without any extra text.
 Response Format:
 {response_format}
+
+If no action should be selected, respond with an empty JSON object
 Ensure the response can be parsed by Python json.loads
 
 Follow the described format strictly.

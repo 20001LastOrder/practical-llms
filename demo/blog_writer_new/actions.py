@@ -226,6 +226,9 @@ class GenerateOutline(BaseAction):
 
         outline_results = process_outlines(outline_json)
 
+        with open("outline.json", "w") as f:
+            json.dump(outline_json, f, indent=2)
+
         return outline_results
 
 
