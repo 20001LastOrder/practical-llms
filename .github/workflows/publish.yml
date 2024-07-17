@@ -30,14 +30,22 @@ jobs:
           sed -i '0,/version =.*/s//version = "'"${{ github.event.release.tag_name }}"'"/' ./src/pyproject.toml
         shell: bash
 
-      - name: Add and Commit Version
-        run: |
-          git add ./src/pyproject.toml
-          git config --global user.name "PyPI Poetry Publish Bot"
-          git config --global user.email "bot@ai.science"
-          git commit -m "Change version to ${{ github.event.release.tag_name }}" --allow-empty
-          git push origin HEAD:main
-        shell: bash
+      # - name: Add and Commit Version
+      #   run: |
+      #     # git add ./src/pyproject.toml
+      #     # git config --global user.name "PyPI Poetry Publish Bot"
+      #     # git config --global user.email "bot@ai.science"
+      #     # git commit -m "Change version to ${{ github.event.release.tag_name }}" --allow-empty
+      #     # git push origin HEAD:main
+      #   shell: bash
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "Bump version to ${{ github.event.release.tag_name }}"
+          branch: "bump-version-${{ github.event.release.tag_name }}"
+          delete-branch: true
+          title: "Bump version to ${{ github.event.release.tag_name }}"
 
       - name: Install dependencies
         working-directory: ./src
