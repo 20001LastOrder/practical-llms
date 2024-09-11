@@ -36,7 +36,7 @@ class StartQuestion(BaseAction):
     args: dict = {}
 
     def execute(self) -> str:
-        question = input()
+        question = input("Ask me a question: ")
         self.belief.set_current_task(Event(EventType.task, "user", question))
 
         return "success"

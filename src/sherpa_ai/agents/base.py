@@ -73,6 +73,12 @@ class BaseAgent(ABC):
 
         for i in range(self.num_runs):
             try:
+                actions = self.belief.get_actions()
+
+                if len(actions) == 0:
+                    logger.info("No actions found")
+                    return
+
                 result = self.policy.select_action(self.belief)
             except Exception as e:
                 self.belief.update_internal(
@@ -103,18 +109,18 @@ class BaseAgent(ABC):
                 "Action: " + result.action.name + str(result.args),
             )
 
-            try:
-                action_output = self.act(result.action, result.args)
-            except Exception as e:
-                self.belief.update_internal(
-                    EventType.action_output,
-                    self.feedback_agent_name,
-                    f"Error in executing action: {result.action.name}. Error: {e}",
-                )
-                logger.error(
-                    f"Error in executing action: {result.action.name}. Error: {e}"
-                )
-                continue
+            # try:
+            action_output = self.act(result.action, result.args)
+            # except Exception as e:
+            #     self.belief.update_internal(
+            #         EventType.action_output,
+            #         self.feedback_agent_name,
+            #         f"Error in executing action: {result.action.name}. Error: {e}",
+            #     )
+            #     logger.error(
+            #         f"Error in executing action: {result.action.name}. Error: {e}"
+            #     )
+            #     continue
 
             action_output = self.belief.get(result.action.name, action_output)
 

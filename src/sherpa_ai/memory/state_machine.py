@@ -144,6 +144,7 @@ class SherpaStateMachine:
             for source, transitions in event.transitions.items():
                 if state.startswith(source):
                     transition = transitions[0]
+
                     action = self.transition_to_action(t, transition)
                     actions.append(action)
 
